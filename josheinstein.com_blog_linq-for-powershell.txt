@@ -1,0 +1,141 @@
+JoshEinstein.com
+
+Home
+LINQ for PowerShell
+
+Download LINQ.psm1
+
+I’m gonna start off by saying the module I’m posting about does not follow the PowerShell naming guidelines. In fact, not only does it use non-standard verb names, but the "verb" part of all the function names aren’t even verbs. I hate breaking the rules like this but the Verb-Noun naming couldn’t really group these functions together the way I wanted and naming them correctly would have been very difficult. So feel free to rename as needed.
+
+A while back I posted about a ConvertTo-Dictionary PowerShell function. This handy little function would take an input object from the pipeline and populate a Hashtable using a key selector and optional value selector. Very similar to how LINQ’s ToDictionary method works. It uses ScriptBlocks in the same way C# uses lambda expressions. There is one very nice trick in the module. A function called Invoke-ScriptBlock that shows how to inject a $_ (dollar underbar) variable into a ScriptBlock’s scope when invoking it. This is very handy for simulating lambdas in PowerShell functions.
+
+Anyhow, over time I added several more LINQ-like functions and then I just went all out and tried to implement all the most popular LINQ methods. I managed to get a good deal done although there is still some documentation work needed. Some of the functions may seem redundant because they have nearly the same functionality as existing PowerShell cmdlets. In these cases it’s usually because I thought it could be more LINQ-like. For example I have Linq-Min because it’s simpler and more flexible than Measure-Object. But I didn’t duplicate Where-Object because there was no point.
+
+The following code example shows how you might use these functions. Not all of them are shown. Notice the lamba-like syntax for predicates, selectors, etc. They also make use of the convenient $_ (dollar underbar) variable to represent the "current item" which makes them more consistent with Where-Object, Foreach-Object, etc.
+view source
+print?
+Import-Module LINQ
+ 
+function Assert-AreEqual($Expected, $Actual) {
+    if (@(Compare-Object $Expected $Actual -SyncWindow 0).Length) {
+        $OFS = ','
+        Write-Error "Assert-AreEqual Failed: Expected=($Expected), Actual=($Actual)"
+    }
+}
+ 
+# All
+Assert-AreEqual -Expected ($true)   -Actual (1..5 | Linq-All { $_ -gt 0 })
+Assert-AreEqual -Expected ($false)  -Actual (1..5 | Linq-All { $_ -gt 6 })
+Assert-AreEqual -Expected ($true)   -Actual (@()  | Linq-All { $_ -gt 6 })
+ 
+# Any
+Assert-AreEqual -Expected ($true)   -Actual (1..5 | Linq-Any)
+Assert-AreEqual -Expected ($false)  -Actual (@()  | Linq-Any)
+Assert-AreEqual -Expected ($true)   -Actual (1..5 | Linq-Any { $_ -eq 3 })
+Assert-AreEqual -Expected ($false)  -Actual (1..5 | Linq-Any { $_ -eq 6 })
+ 
+# First
+Assert-AreEqual -Expected @(1)      -Actual @(1..5 | Linq-First)
+Assert-AreEqual -Expected @(2)      -Actual @(1..5 | Linq-First { $_ -gt 1 })
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-First { $_ -gt 5 })
+ 
+# Last
+Assert-AreEqual -Expected @(5)      -Actual @(1..5 | Linq-Last)
+Assert-AreEqual -Expected @(4)      -Actual @(1..5 | Linq-Last { $_ -lt 5 })
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Last { $_ -lt 1 })
+ 
+# Single
+Assert-AreEqual -Expected @(2)      -Actual @(1..5 | Linq-Single { $_ -eq 2 })
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Single { $_ -gt 5 })
+ 
+# Skip
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Skip 0)
+Assert-AreEqual -Expected @(3..5)   -Actual @(1..5 | Linq-Skip 2)
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Skip 5)
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Skip 6)
+ 
+# SkipWhile
+Assert-AreEqual -Expected @(2..5)   -Actual @(1..5 | Linq-SkipWhile { $_ -eq 1})
+Assert-AreEqual -Expected @(3..5)   -Actual @(1..5 | Linq-SkipWhile { $_ -lt 3})
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-SkipWhile { $false })
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-SkipWhile { $true })
+ 
+# Take
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Take 5)
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Take 6)
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..6 | Linq-Take 5)
+Assert-AreEqual -Expected @(1..3)   -Actual @(1..5 | Linq-Take 3)
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Take 0)
+ 
+# TakeWhile
+Assert-AreEqual -Expected @(1..2)   -Actual @(1..5 | Linq-TakeWhile { $_ -lt 3})
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-TakeWhile { $_ -eq 2})
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-TakeWhile { $false })
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-TakeWhile { $true })
+ 
+# Distinct
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Distinct)
+Assert-AreEqual -Expected @(1..5)   -Actual @(1,2,3,4,5,1,2,3,4,5 | Linq-Distinct)
+Assert-AreEqual -Expected @()       -Actual @(Linq-Distinct)
+ 
+# Repeat
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Repeat 1)
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Repeat 0)
+Assert-AreEqual -Expected @(1,1,2,2,3,3,4,4,5,5) -Actual @(1..5 | Linq-Repeat 2)
+ 
+# Except
+Assert-AreEqual -Expected @(1,3,5)  -Actual @(1..5 | Linq-Except (2,4))
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Except 6)
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Except (1..5))
+ 
+# Intersect
+Assert-AreEqual -Expected @(2,4)    -Actual @(1..5 | Linq-Intersect (2,4))
+Assert-AreEqual -Expected @()       -Actual @(1..5 | Linq-Intersect 6)
+Assert-AreEqual -Expected @(1..5)   -Actual @(1..5 | Linq-Intersect (1..5))
+ 
+# IndexOf
+Assert-AreEqual -Expected (0)       -Actual (1..5 | Linq-IndexOf { $_ -eq 1 })
+Assert-AreEqual -Expected (3)       -Actual (1..5 | Linq-IndexOf { $_ -eq 4 })
+Assert-AreEqual -Expected (-1)      -Actual (1..5 | Linq-IndexOf { $_ -eq 6 })
+Assert-AreEqual -Expected (2)       -Actual (1,2,3,3,3 | Linq-IndexOf { $_ -eq 3 })
+ 
+# Count
+Assert-AreEqual -Expected (5)       -Actual (1..5 | Linq-Count)
+Assert-AreEqual -Expected (1)       -Actual (1..5 | Linq-Count { $_ -eq 3 })
+Assert-AreEqual -Expected (0)       -Actual (1..5 | Linq-Count { $_ -eq 6 })
+ 
+# Average, Min, Max
+Assert-AreEqual -Expected (3)       -Actual (1..5 | Linq-Average)
+Assert-AreEqual -Expected (15)      -Actual (1..5 | Linq-Sum)
+Assert-AreEqual -Expected (5)       -Actual (1..5 | Linq-Max)
+Assert-AreEqual -Expected (1)       -Actual (1..5 | Linq-Min)
+
+The complete function listing is shown below. I’ve been selfishly keeping this module to myself for about a year now and I felt it was time to post it. Let me know what you think!
+Name 	Synopsis
+Linq-All 	Determines whether all elements of a sequence satisfy a condition.
+Linq-Any 	Determines whether any element of a sequence satisfies a condition.
+Linq-Average 	Returns the average of values in a sequence.
+Linq-Count 	Returns a number that represents how many elements in the specified sequence satisfy a condition.
+Linq-Distinct 	Returns unique items from the pipeline input.
+Linq-Except 	Excludes from the pipeline input the items which also appear in a second set.
+Linq-Expand 	Drills into an input object based on one or more property names to simplify access to data inside nested structures.
+Linq-First 	Returns the first element in a sequence that satisfies a specified condition.
+Linq-IndexOf 	Returns the zero-based position of the first element in a sequence that meets the specified criteria.
+Linq-Intersect 	Includes from the pipeline input only the items that exist in a second set.
+Linq-Last 	Returns the last element of a sequence that satisfies a specified condition.
+Linq-Max 	Returns the maximum value in a sequence.
+Linq-Min 	Returns the minimum value in a sequence.
+Linq-Repeat 	Repeats the items from the pipeline a specified number of times.
+Linq-Select 	Selects a property, property set, or ScriptBlock projection of the input.
+Linq-SelectMany 	Similar to Linq-Select but always ensures the output is wrapped in an array.
+Linq-Single 	Returns a single item that satisfies a specified condition, and throws an exception if more than one or zero such element exists.
+Linq-Skip 	Skips the specified number of items from the input and then returns the remaining items.
+Linq-SkipWhile 	Skips items from the input as long as a specified condition is true and then returns the remaining items.
+Linq-Sum 	Returns the sum of values in a sequence.
+Linq-Take 	Returns a specified number of contiguous items from the start of the input pipeline.
+Linq-TakeWhile 	Returns items from the input as long as a specified condition is true.
+Linq-ToDictionary 	Creates a Hashtable from a sequence according to specified key selector and value selector functions.
+Linq-ToSet 	Creates a HashSet containing only unique items from a sequence.
+Where-Like 	Returns items from a sequence whose selected values match one or more wildcard patterns.
+Where-Match 	Returns items from a sequence whose selected values match one or more regular expression patterns.
+
